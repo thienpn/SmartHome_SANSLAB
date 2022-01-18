@@ -40,3 +40,4 @@ models
 apps
 .vscode
 .cache
+*.pyc
