@@ -512,7 +512,7 @@ main (int argc, char *argv[])
 
   /* Configure the nvinfer element using the nvinfer config file. */
   g_object_set (G_OBJECT (pgie),
-      "config-file-path", "dstest3_pgie_config.txt", NULL);
+      "config-file-path", "config_infer_primary_ssd.txt", NULL);
 
   /* Override the batch-size set in the config file with the number of sources. */
   g_object_get (G_OBJECT (pgie), "batch-size", &pgie_batch_size, NULL);
