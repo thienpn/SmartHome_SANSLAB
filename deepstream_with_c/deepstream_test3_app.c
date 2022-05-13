@@ -499,10 +499,10 @@ main (int argc, char *argv[])
     return -1;
   }
 
-  if(!transform && prop.integrated) {
+  /*if(!transform && prop.integrated) {
     g_printerr ("One tegra element could not be created. Exiting.\n");
     return -1;
-  }
+  }*/
 
   g_object_set (G_OBJECT (streammux), "batch-size", num_sources, NULL);
 

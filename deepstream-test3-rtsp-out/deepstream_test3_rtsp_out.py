@@ -17,15 +17,14 @@
 # limitations under the License.
 ################################################################################
 
-import argparse
 import sys
 import gi
 import configparser
+gi.require_version('Gst', '1.0')
+gi.require_version('GstRtspServer', '1.0')
 from gi.repository import GObject, Gst, GstRtspServer
 from gi.repository import GLib
 sys.path.append('../')
-gi.require_version('Gst', '1.0')
-gi.require_version('GstRtspServer', '1.0')
 from ctypes import *
 import time
 import sys
@@ -35,6 +34,9 @@ from common.is_aarch_64 import is_aarch64
 from common.bus_call import bus_call
 from common.FPS import GETFPS
 import pyds
+
+import RPi.GPIO as GPIO
+Pins = [29,31,33,35,37]
 fps_streams={}
 
 MAX_DISPLAY_LEN=64
@@ -48,9 +50,30 @@ MUXER_BATCH_TIMEOUT_USEC=4000000
 TILED_OUTPUT_WIDTH=1280
 TILED_OUTPUT_HEIGHT=720
 GST_CAPS_FEATURES_NVMM="memory:NVMM"
-OSD_PROCESS_MODE= 1
+OSD_PROCESS_MODE= 2
 OSD_DISPLAY_TEXT= 1
 pgie_classes_str= ["unlabeled", "fall_backwards", "hand_waving","sitting","put_on_a_shoe", "walking"]
+
+def setup():
+    GPIO.setmode(GPIO.BOARD)
+    for pin in Pins:
+        GPIO.setup(pin, GPIO.OUT,initial=GPIO.HIGH)
+    GPIO.setwarnings(False)
+    print("Setup Done!!!")
+
+def On_LED(Led_Pin):
+    GPIO.output(Led_Pin, GPIO.HIGH)
+    
+def Off_LED(Led_Pin):
+    GPIO.output(Led_Pin, GPIO.LOW)
+
+def Off_All():
+    for pin in Pins:
+        Off_LED(pin)
+
+def Clean():
+    Off_All()
+    GPIO.cleanup()
 
 # tiler_sink_pad_buffer_probe  will extract metadata received on OSD sink pad
 # and update params for drawing rectangle, object information etc.
@@ -81,20 +104,13 @@ def tiler_src_pad_buffer_probe(pad,info,u_data):
         frame_number=frame_meta.frame_num
         l_obj=frame_meta.obj_meta_list
         num_rects = frame_meta.num_obj_meta
-        obj_counter = {
-        PGIE_CLASS_ID_VEHICLE:0,
-        PGIE_CLASS_ID_PERSON:0,
-        PGIE_CLASS_ID_BICYCLE:0,
-        PGIE_CLASS_ID_ROADSIGN:0
-        }
         while l_obj is not None:
             try: 
                 # Casting l_obj.data to pyds.NvDsObjectMeta
                 obj_meta=pyds.NvDsObjectMeta.cast(l_obj.data)
             except StopIteration:
                 break
-            # obj_counter[obj_meta.class_id] += 1
-            print("Object is %s \n Confidence is %f "%(pgie_classes_str[obj_meta.class_id], obj_meta.confidence))
+            print("Object is %s \n"%(pgie_classes_str[obj_meta.class_id]))
             try: 
                 l_obj=l_obj.next
             except StopIteration:
@@ -252,11 +268,11 @@ def main(args):
         sys.stderr.write(" Unable to create nvosd \n")
     nvosd.set_property('process-mode',OSD_PROCESS_MODE)
     nvosd.set_property('display-text',OSD_DISPLAY_TEXT)
-    if(is_aarch64()):
-        print("Creating transform \n ")
-        transform=Gst.ElementFactory.make("nvegltransform", "nvegl-transform")
-        if not transform:
-            sys.stderr.write(" Unable to create transform \n")
+    # if(is_aarch64()):
+    #     print("Creating transform \n ")
+    #     transform=Gst.ElementFactory.make("nvegltransform", "nvegl-transform")
+    #     if not transform:
+    #         sys.stderr.write(" Unable to create transform \n")
 
     nvvidconv_postosd = Gst.ElementFactory.make("nvvideoconvert", "convertor_postosd")
     if not nvvidconv_postosd:
@@ -331,8 +347,8 @@ def main(args):
     pipeline.add(caps)
     pipeline.add(encoder)
     pipeline.add(rtppay)    
-    if is_aarch64():
-        pipeline.add(transform)
+    # if is_aarch64():
+    #     pipeline.add(transform)
     pipeline.add(sink)
 
     print("Linking elements in the Pipeline \n")
@@ -344,21 +360,26 @@ def main(args):
     queue3.link(nvvidconv)
     nvvidconv.link(queue4)
     queue4.link(nvosd)
-    if is_aarch64():
-        nvosd.link(queue5)
-        queue5.link(transform)
-        transform.link(sink)
-    else:
-        # nvosd.link(queue5)
-        # queue5.link(sink)  
-        nvosd.link(queue5)
-        queue5.link(nvvidconv_postosd)
-        # nvosd.link(nvvidconv_postosd)
-        nvvidconv_postosd.link(caps)
-        caps.link(encoder)
-        encoder.link(rtppay)
-        rtppay.link(sink)
-
+    # if is_aarch64():
+    #     nvosd.link(queue5)
+    #     queue5.link(transform)
+    #     transform.link(sink)
+    # else:
+    #     # nvosd.link(queue5)
+    #     # queue5.link(sink)  
+    #     nvosd.link(queue5)
+    #     queue5.link(nvvidconv_postosd)
+    #     # nvosd.link(nvvidconv_postosd)
+    #     nvvidconv_postosd.link(caps)
+    #     caps.link(encoder)
+    #     encoder.link(rtppay)
+    #     rtppay.link(sink)
+    nvosd.link(queue5)
+    queue5.link(nvvidconv_postosd)
+    nvvidconv_postosd.link(caps)
+    caps.link(encoder)
+    encoder.link(rtppay)
+    rtppay.link(sink)
     # create an event loop and feed gstreamer bus mesages to it
     loop = GObject.MainLoop()
     bus = pipeline.get_bus()
@@ -398,15 +419,18 @@ def main(args):
     # start play back and listed to events		
     pipeline.set_state(Gst.State.PLAYING)
     try:
+        setup()
+        Off_All()
+        On_LED(29)
         loop.run()
     except:
         pass
     # cleanup
+    Clean()
     print("Exiting app\n")
     pipeline.set_state(Gst.State.NULL)
 
 if __name__ == '__main__':
-    # parse_args()
     codec = 'H264'
     bitrate = 4000000
     sys.exit(main(sys.argv))
