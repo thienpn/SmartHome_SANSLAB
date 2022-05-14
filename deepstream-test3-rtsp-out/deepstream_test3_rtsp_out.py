@@ -37,6 +37,7 @@ import pyds
 
 import RPi.GPIO as GPIO
 Pins = [29,31,33,35,37]
+clr = {29:"Blue", 31: "White", 33: "Yellow", 35: "Green", 37: "Red" }
 fps_streams={}
 
 MAX_DISPLAY_LEN=64
@@ -66,6 +67,10 @@ def On_LED(Led_Pin):
     
 def Off_LED(Led_Pin):
     GPIO.output(Led_Pin, GPIO.LOW)
+
+def On_All():
+    for pin in Pins:
+        On_LED(pin)    
 
 def Off_All():
     for pin in Pins:
@@ -104,12 +109,29 @@ def tiler_src_pad_buffer_probe(pad,info,u_data):
         frame_number=frame_meta.frame_num
         l_obj=frame_meta.obj_meta_list
         num_rects = frame_meta.num_obj_meta
+        if l_obj is None:
+            Off_All()
         while l_obj is not None:
             try: 
                 # Casting l_obj.data to pyds.NvDsObjectMeta
                 obj_meta=pyds.NvDsObjectMeta.cast(l_obj.data)
             except StopIteration:
                 break
+            curr_pin = 0
+            if obj_meta.class_id != 0:
+                if Pins[obj_meta.class_id-1] != curr_pin:
+                    Off_All()
+                    curr_pin = Pins[obj_meta.class_id-1]
+                    print("Color: ", clr[curr_pin])
+                    On_LED(curr_pin)
+                elif Pins[obj_meta.class_id-1] == curr_pin:
+                    print("Color: ", clr[curr_pin])
+                    On_LED(curr_pin)
+                else:
+                    print("This is Exception")
+            elif obj_meta.class_id == 0:
+                Off_All()
+
             print("Object is %s \n"%(pgie_classes_str[obj_meta.class_id]))
             try: 
                 l_obj=l_obj.next
@@ -419,9 +441,6 @@ def main(args):
     # start play back and listed to events		
     pipeline.set_state(Gst.State.PLAYING)
     try:
-        setup()
-        Off_All()
-        On_LED(29)
         loop.run()
     except:
         pass
@@ -431,6 +450,8 @@ def main(args):
     pipeline.set_state(Gst.State.NULL)
 
 if __name__ == '__main__':
+    setup()
+    Off_All()
     codec = 'H264'
     bitrate = 4000000
     sys.exit(main(sys.argv))
